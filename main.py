@@ -30,10 +30,12 @@ client = None
 
 def connect_ai():
     global client
-    client = Client(
-        SPACE_NAME,
-        token=HF_TOKEN if HF_TOKEN else None
-    )
+    client = client = Client(
+    SPACE_NAME,
+    hf_token=HF_TOKEN if HF_TOKEN else None
+)
+        
+    
 
 
 # START
