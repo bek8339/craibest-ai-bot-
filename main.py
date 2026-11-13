@@ -21,7 +21,6 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 
 SPACE_NAME = "CumaSystem/Omni-videos-custom"
 API_NAME = "/_submit_t2v"
-
 PORT = int(os.environ.get("PORT", 10000))
 
 logging.basicConfig(
@@ -32,7 +31,7 @@ logging.basicConfig(
 client = None
 
 
-# RENDER UCHUN WEB SERVER
+# RENDER SERVER
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -50,16 +49,15 @@ def start_web_server():
         HealthHandler
     )
 
-    thread = threading.Thread(
+    threading.Thread(
         target=server.serve_forever,
         daemon=True
-    )
-    thread.start()
+    ).start()
 
-    logging.info("Web server port %s da ishga tushdi", PORT)
+    logging.info("Render server port %s ishga tushdi", PORT)
 
 
-# HUGGING FACE ULANISHI
+# HUGGING FACE
 def connect_ai():
     global client
 
@@ -77,18 +75,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "CRAIBEST AI VIDEO BOT\n\n"
         "Video yaratish uchun matn yuboring.\n\n"
         "Masalan:\n"
-        "A futuristic city at night, cinematic lighting"
+        "A beautiful white horse running across a green field."
     )
 
 
 # HELP
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Video yaratish uchun tasvirni matn bilan yozing."
+        "Video yaratish uchun ingliz tilida tasvir yuboring."
     )
 
 
-# VIDEO NATIJASINI TOPISH
+# VIDEO TOPISH
 def find_video(result):
     if isinstance(result, str):
         if os.path.isfile(result):
@@ -98,19 +96,29 @@ def find_video(result):
             return result
 
     if isinstance(result, dict):
-        path = result.get("path")
-        if path and os.path.isfile(path):
-            return path
+        for key in ("video", "path", "url"):
+            if key in result:
+                found = find_video(result[key])
+                if found:
+                    return found
 
-        url = result.get("url")
-        if url:
-            return url
+        for value in result.values():
+            found = find_video(value)
+            if found:
+                return found
 
     if isinstance(result, (list, tuple)):
         for item in result:
-            video = find_video(item)
-            if video:
-                return video
+            found = find_video(item)
+            if found:
+                return found
+
+    for key in ("video", "path", "url"):
+        value = getattr(result, key, None)
+        if value:
+            found = find_video(value)
+            if found:
+                return found
 
     return None
 
@@ -124,12 +132,12 @@ async def generate_video(
 
     if len(prompt) < 5:
         await update.message.reply_text(
-            "Iltimos, batafsilroq matn yuboring."
+            "Iltimos, batafsilroq matn yozing."
         )
         return
 
     status = await update.message.reply_text(
-        "Video yaratish boshlandi. Kuting..."
+        "Video yaratish boshlandi. Iltimos kuting..."
     )
 
     try:
@@ -140,7 +148,7 @@ async def generate_video(
                 384,
                 "16:9",
                 prompt,
-                "",
+                prompt,
                 "",
                 "",
                 "",
@@ -149,11 +157,15 @@ async def generate_video(
             return job.result()
 
         result = await asyncio.to_thread(create)
+
+        logging.info("AI natijasi: %s", result)
+
         video = find_video(result)
 
         if not video:
             await status.edit_text(
-                "Video topilmadi. AI API sozlamasini tekshirish kerak."
+                "AI javob berdi, lekin video fayli topilmadi. "
+                "Logs orqali tekshiramiz."
             )
             return
 
@@ -170,7 +182,7 @@ async def generate_video(
         await status.delete()
 
     except Exception:
-        logging.exception("Video yaratishda xatolik")
+        logging.exception("VIDEO YARATISH XATOSI")
 
         await status.edit_text(
             "Video yaratishda xatolik yuz berdi. "
@@ -183,13 +195,9 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN kiritilmagan!")
 
-    # Avval Render portini ochamiz
     start_web_server()
-
-    # AI ga ulanamiz
     connect_ai()
 
-    # Telegram bot
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -202,11 +210,11 @@ def main():
         )
     )
 
-    logging.info("CRAIBEST AI BOT ishga tushdi!")
+    logging.info("CRAIBEST AI BOT ISHGA TUSHDI!")
 
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
-    
+        
