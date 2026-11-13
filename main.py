@@ -2,6 +2,9 @@
 import os
 import logging
 import asyncio
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -19,41 +22,69 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 SPACE_NAME = "CumaSystem/Omni-videos-custom"
 API_NAME = "/_submit_t2v"
 
+PORT = int(os.environ.get("PORT", 10000))
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
-# Hugging Face ulanishi
 client = None
 
 
+# RENDER UCHUN WEB SERVER
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"CRAIBEST AI BOT IS RUNNING")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def start_web_server():
+    server = ThreadingHTTPServer(
+        ("0.0.0.0", PORT),
+        HealthHandler
+    )
+
+    thread = threading.Thread(
+        target=server.serve_forever,
+        daemon=True
+    )
+    thread.start()
+
+    logging.info("Web server port %s da ishga tushdi", PORT)
+
+
+# HUGGING FACE ULANISHI
 def connect_ai():
     global client
+
     client = Client(
         SPACE_NAME,
         hf_token=HF_TOKEN if HF_TOKEN else None
     )
-        
-    
+
+    logging.info("Hugging Face ulandi")
 
 
 # START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎬 CRAIBEST AI VIDEO BOT\n\n"
-        "Menga video uchun matn yuboring.\n\n"
+        "CRAIBEST AI VIDEO BOT\n\n"
+        "Video yaratish uchun matn yuboring.\n\n"
         "Masalan:\n"
-        "A futuristic city at night, cinematic lighting\n\n"
-        "AI siz uchun video yaratadi."
+        "A futuristic city at night, cinematic lighting"
     )
 
 
-# YORDAM
+# HELP
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Video yaratish uchun istalgan tasvirni matn bilan yozing.\n"
-        "Masalan: A beautiful sunset over the mountains."
+        "Video yaratish uchun tasvirni matn bilan yozing."
     )
 
 
@@ -61,6 +92,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def find_video(result):
     if isinstance(result, str):
         if os.path.isfile(result):
+            return result
+
+        if result.startswith("http"):
             return result
 
     if isinstance(result, dict):
@@ -81,8 +115,11 @@ def find_video(result):
     return None
 
 
-# AI VIDEO YARATISH
-async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# VIDEO YARATISH
+async def generate_video(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     prompt = update.message.text.strip()
 
     if len(prompt) < 5:
@@ -92,8 +129,7 @@ async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     status = await update.message.reply_text(
-        "⏳ So'rovingiz qabul qilindi.\n"
-        "AI video tayyorlamoqda..."
+        "Video yaratish boshlandi. Kuting..."
     )
 
     try:
@@ -117,11 +153,13 @@ async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not video:
             await status.edit_text(
-                "Video natijasi topilmadi. API sozlamasini tekshirish kerak."
+                "Video topilmadi. AI API sozlamasini tekshirish kerak."
             )
             return
 
-        await status.edit_text("✅ Video tayyor! Yuborilmoqda...")
+        await status.edit_text(
+            "Video tayyor! Telegramga yuborilmoqda..."
+        )
 
         if video.startswith("http"):
             await update.message.reply_video(video=video)
@@ -131,11 +169,12 @@ async def generate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await status.delete()
 
-    except Exception as error:
+    except Exception:
         logging.exception("Video yaratishda xatolik")
+
         await status.edit_text(
-            "Xatolik yuz berdi.\n"
-            "Birozdan keyin qayta urinib ko'ring."
+            "Video yaratishda xatolik yuz berdi. "
+            "Keyinroq qayta urinib ko'ring."
         )
 
 
@@ -144,21 +183,30 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN kiritilmagan!")
 
+    # Avval Render portini ochamiz
+    start_web_server()
+
+    # AI ga ulanamiz
     connect_ai()
 
+    # Telegram bot
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, generate_video)
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            generate_video
+        )
     )
 
-    print("CRAIBEST AI BOT ishga tushdi!")
+    logging.info("CRAIBEST AI BOT ishga tushdi!")
 
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
-              
+    
